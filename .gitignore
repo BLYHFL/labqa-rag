@@ -1,21 +1,35 @@
-# Secrets
+# 环境变量
 .env
+
+# 向量索引（运行时生成）
+faiss_index/
+bm25_index.pkl
 
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
 
-# OS
-.DS_Store
-Thumbs.db
+# uv
+uv.lock
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Node (for .opencode)
-node_modules/
+# macOS
+.DS_Store
+Thumbs.db
+
+# OpenCode（保留目录结构，不提交缓存）
+.opencode/node_modules/
+
+# Virtual env
+.venv/

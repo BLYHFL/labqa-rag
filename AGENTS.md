@@ -2,12 +2,12 @@
 
 ## Architecture
 
-This project has **two parallel execution surfaces** that share the same codebase:
+Two parallel execution surfaces share the same knowledge base (`.opencode/context/`):
 
 1. **Python runtime** (`labqa/` package, `main.py`) — standalone CLI / Feishu WebSocket / one-shot Q&A
 2. **OpenCode agent definitions** (`.opencode/agent/`) — slash commands (`/查设备`, `/查项目`, `/查文档`) inside OpenCode sessions
 
-They use the same knowledge base (`.opencode/context/`) but route through different code paths. The OpenCode agent definitions reference the context files directly; the Python side loads them via `labqa/context_store.py`.
+The OpenCode agents reference context files directly; the Python side loads them via `labqa/context_store.py`. Changes to context files affect both surfaces.
 
 ## Commands
 
@@ -26,8 +26,10 @@ bash scripts/convert.sh
 
 # Install Python deps
 pip install httpx lark-oapi          # runtime
-pip install python-docx python-pptx openpyxl  # doc conversion (optional)
+pip install python-docx python-pptx openpyxl  # doc conversion (optional, for convert.sh)
 ```
+
+**Gotcha**: `main.py webhook` and `main.py feishu` both start the WebSocket long-connection client (the `webhook` alias was kept for backward compatibility but the HTTP webhook path in `mode_webhook()` was replaced).
 
 ## Environment / Config
 
@@ -37,12 +39,14 @@ Required: `LABQA_LLM_API_KEY` (or `DEEPSEEK_API_KEY`). Default LLM: DeepSeek `de
 
 For Feishu: `FEISHU_APP_ID` + `FEISHU_APP_SECRET`. Use WebSocket long connection mode (`main.py feishu`) — it avoids needing a public IP.
 
+`LABQA_DEBUG=true` enables verbose logging in router, context store, and LLM client.
+
 ## Two Feishu Implementations — Use the Right One
 
 | File | What it is | Use |
 |------|-----------|-----|
 | `labqa/feishu_ws.py` | WebSocket long connection via lark-oapi SDK | **Use this** (`main.py feishu`) |
-| `labqa/webhook.py` | Flask HTTP webhook | `main.py webhook` (needs public IP) |
+| `labqa/webhook.py` | Flask HTTP webhook | `main.py webhook` (needs public IP, but currently routes to feishu_ws) |
 | `scripts/feishu-webhook.py` | **Legacy standalone** — has its own keyword-matching, bypasses `labqa/` | Do NOT use for new work |
 
 Only `labqa/feishu_ws.py` and `labqa/webhook.py` go through the real orchestrator.
@@ -65,12 +69,13 @@ labqa/
 ## Key Gotchas
 
 - **KnowledgeAgent searches TWO directories**: `category = None` means it queries both `context/knowledge/` and `context/guides/` in two separate `get_context_text()` calls. Other agents search exactly one directory.
-- **LLM URL construction**: If `LABQA_LLM_API_BASE` already contains `/v1`, the client appends `/chat/completions` directly to avoid doubling (`/v1/v1`).
+- **LLM URL construction**: If `LABQA_LLM_API_BASE` already contains `/v1`, the client appends `/chat/completions` directly to avoid doubling (`/v1/v1`). Default base is `https://api.deepseek.com/v1`.
 - **No test framework**: There is no `pytest`, no test directory. The only "tests" are the manual checklist in `docs/TESTING.md`.
-- **Frontmatter is hand-parsed**: `context_store.py` splits on `---` and parses `key: value` lines manually. Not a full YAML parser.
+- **Frontmatter is hand-parsed**: `context_store.py` splits on `---` and parses `key: value` lines manually. Not a full YAML parser. Don't put complex YAML (nested objects, lists) in frontmatter.
 - **CLI offline mode**: When no API key is set, the CLI offers an offline mode that does keyword search only (no LLM calls). This uses `os.environ["LABQA_LLM_API_KEY"] = "offline-mode"` as a sentinel.
 - **Message dedup in feishu_ws.py**: Two-layer dedup — by `message_id` (set-based) and by content hash within 30s window (chat-scoped). This compensates for Feishu's retry behavior.
-- **Agent matching is pure keyword scoring**, not LLM-based. Keywords are hardcoded in `router.py` and each agent's `extract_search_keywords()`.
+- **Agent matching is pure keyword scoring**, not LLM-based. Keywords are hardcoded in `router.py` and each agent's `extract_search_keywords()`. To add a new intent, update both the keyword lists in `router.py` AND the agent's keyword extraction method.
+- **navigation.md is excluded from search**: The context store skips `navigation.md` when building search results. It's a human/agent index, not searchable content.
 
 ## Knowledge Base
 
@@ -85,6 +90,8 @@ updated: 2026-05-07
 ```
 
 `context/navigation.md` is the master index — it's **excluded from search results** by the context store. Admin workflow: drop files in `raw-docs/` → run `scripts/convert.sh` → verify output in `context/`.
+
+The convert script auto-classifies files by filename keywords (设备/服务器 → devices/, 项目/进度 → projects/, 规范/流程 → guides/, default → knowledge/). It adds frontmatter automatically if missing.
 
 ## References
 
