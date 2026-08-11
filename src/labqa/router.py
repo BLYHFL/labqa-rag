@@ -84,21 +84,48 @@ INTENT_CATEGORY_MAP = {
 
 
 def extract_keywords(text: str) -> List[str]:
-    """从用户消息中提取关键词"""
-    import re
-    text_lower = text.lower()
-    words = set()
+    """
+    从用户消息中提取关键词，用于后续的意图识别（判断用户想问设备/项目/知识库）。
 
-    # 中文：按常见分隔切分
+    工作流程：
+      ① 将中文标点替换为空格，按空格切分得到一个个"词块"
+      ② 过滤掉单字词（长度 < 2 的视为无意义语气词/助词）
+      ③ 额外提取形如 "A100"、"H800" 的设备型号实体，补充进关键词集合
+      ④ 返回去重后的关键词列表
+
+    为什么这么做：
+      - 用户输入是中文口语（如"GPU服务器在哪？"），不能像英文那样按空格分词
+      - 所以先把中文标点替换成空格，再用 split() 切分
+      - 单字"的/吗/呢/啊"等无意义，用 len >= 2 过滤掉
+      - 型号（A100, H100, 4090 等）是重要实体，单靠标点切分可能漏掉，所以用正则额外捕捉
+
+    Args:
+        text: 用户输入的原始字符串，如 "GPU服务器在哪？"
+
+    Returns:
+        List[str]: 提取出的关键词列表，如 ["gpu服务器在哪", "gpu", "a100"]
+    """
+    import re
+
+    words: set = set()  # 用 set 自动去重
+
+    # ========== 第 1 步：中文标点替换 + 切分 ==========
+    # 原文本可能包含中文标点，导致 split() 无法正确切分。
+    # 例: "GPU服务器在哪？" → replace后 "GPU服务器在哪 " → split 得到 ["GPU服务器在哪"]
+    # 注意：只替换了逗号/问号/句号，其他标点（如感叹号、冒号）没处理
     for part in text.replace("，", " ").replace("？", " ").replace("。", " ").split():
         part = part.strip()
-        if len(part) >= 2:
-            words.add(part.lower())
+        if len(part) >= 2:          # 过滤掉单字词（"的"、"吗"、"呢"等虚词）
+            words.add(part.lower())  # 统一转小写，让 "GPU" 和 "gpu" 匹配同一个词
 
-    # 特殊实体：型号如 A100, H100
+    # ========== 第 2 步：提取设备型号实体 ==========
+    # 正则 [a-zA-Z]\d+ 匹配「字母开头 + 数字结尾」的模式
+    # 例如 "A100"、"H800"、"4090"（但 4090 是纯数字，不会被匹配，因为要求字母开头）
+    # 这里用的是原始 text（未转小写），但最后 add 时统一 lower()
     model_pattern = re.findall(r'[a-zA-Z]\d+', text)
     words.update(m.lower() for m in model_pattern)
 
+    # set → list 返回，下游 _score_intent() 会用这些词去匹配各意图的关键词列表
     return list(words)
 
 

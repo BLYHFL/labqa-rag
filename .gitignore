@@ -33,3 +33,6 @@ Thumbs.db
 
 # Virtual env
 .venv/
+
+# 公司内部上下文（隐私）
+.opencode/
